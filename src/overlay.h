@@ -149,10 +149,10 @@ struct device_data {
 
    std::vector<struct queue_data *> queues;
 
-   VkDescriptorPool descriptor_pool;
-   VkDescriptorSetLayout descriptor_layout;
-   VkDescriptorSet descriptor_set;
-
+//    VkDescriptorPool descriptor_pool;
+//    VkDescriptorSetLayout descriptor_layout;
+//    VkDescriptorSet descriptor_set;
+//
    VkSampler sampler;
 
    std::mutex font_mutex;

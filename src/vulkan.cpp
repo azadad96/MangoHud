@@ -121,6 +121,13 @@ struct swapchain_data {
    VkPipelineLayout pipeline_layout;
    VkPipeline pipeline;
 
+   VkDescriptorPool descriptor_pool;
+   VkDescriptorSetLayout descriptor_layout;
+   VkDescriptorSet descriptor_set;
+   size_t font_params_hash = 0;
+
+//    VkSampler sampler;
+
    VkCommandPool command_pool;
 
    std::list<overlay_draw *> draws; /* List of struct overlay_draw */
@@ -252,15 +259,16 @@ static struct device_data *new_device_data(VkDevice device, struct instance_data
    return data;
 }
 
-static VkDescriptorSet alloc_descriptor_set(const struct device_data *device_data)
+static VkDescriptorSet alloc_descriptor_set(const struct swapchain_data *data)
 {
+   struct device_data *device_data = data->device;
    VkDescriptorSet descriptor_set {};
 
    VkDescriptorSetAllocateInfo alloc_info {};
    alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-   alloc_info.descriptorPool = device_data->descriptor_pool;
+   alloc_info.descriptorPool = data->descriptor_pool;
    alloc_info.descriptorSetCount = 1;
-   alloc_info.pSetLayouts = &device_data->descriptor_layout;
+   alloc_info.pSetLayouts = &data->descriptor_layout;
    VK_CHECK(device_data->vtable.AllocateDescriptorSets(device_data->device,
                                                        &alloc_info,
                                                        &descriptor_set));
@@ -284,36 +292,36 @@ static void setup_device_pipeline(struct device_data *device_data)
    VK_CHECK(device_data->vtable.CreateSampler(device_data->device, &sampler_info,
                                               NULL, &device_data->sampler));
 
-   /* Descriptor pool */
-   VkDescriptorPoolSize sampler_pool_size = {};
-   sampler_pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-   sampler_pool_size.descriptorCount = 1;
-   VkDescriptorPoolCreateInfo desc_pool_info = {};
-   desc_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-   desc_pool_info.maxSets = 1;
-   desc_pool_info.poolSizeCount = 1;
-   desc_pool_info.pPoolSizes = &sampler_pool_size;
-   VK_CHECK(device_data->vtable.CreateDescriptorPool(device_data->device,
-                                                     &desc_pool_info,
-                                                     NULL, &device_data->descriptor_pool));
-
-   /* Descriptor layout */
-   VkSampler sampler[1] = { device_data->sampler };
-   VkDescriptorSetLayoutBinding binding[1] = {};
-   binding[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-   binding[0].descriptorCount = 1;
-   binding[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-   binding[0].pImmutableSamplers = sampler;
-   VkDescriptorSetLayoutCreateInfo set_layout_info = {};
-   set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-   set_layout_info.bindingCount = 1;
-   set_layout_info.pBindings = binding;
-   VK_CHECK(device_data->vtable.CreateDescriptorSetLayout(device_data->device,
-                                                          &set_layout_info,
-                                                          NULL, &device_data->descriptor_layout));
+//    /* Descriptor pool */
+//    VkDescriptorPoolSize sampler_pool_size = {};
+//    sampler_pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+//    sampler_pool_size.descriptorCount = 1;
+//    VkDescriptorPoolCreateInfo desc_pool_info = {};
+//    desc_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+//    desc_pool_info.maxSets = 1;
+//    desc_pool_info.poolSizeCount = 1;
+//    desc_pool_info.pPoolSizes = &sampler_pool_size;
+//    VK_CHECK(device_data->vtable.CreateDescriptorPool(device_data->device,
+//                                                      &desc_pool_info,
+//                                                      NULL, &device_data->descriptor_pool));
+//
+//    /* Descriptor layout */
+//    VkSampler sampler[1] = { device_data->sampler };
+//    VkDescriptorSetLayoutBinding binding[1] = {};
+//    binding[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+//    binding[0].descriptorCount = 1;
+//    binding[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+//    binding[0].pImmutableSamplers = sampler;
+//    VkDescriptorSetLayoutCreateInfo set_layout_info = {};
+//    set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+//    set_layout_info.bindingCount = 1;
+//    set_layout_info.pBindings = binding;
+//    VK_CHECK(device_data->vtable.CreateDescriptorSetLayout(device_data->device,
+//                                                           &set_layout_info,
+//                                                           NULL, &device_data->descriptor_layout));
 
    /* Descriptor set */
-   device_data->descriptor_set = alloc_descriptor_set(device_data);
+   //device_data->descriptor_set = alloc_descriptor_set(device_data);
 
 }
 
@@ -702,9 +710,8 @@ static void check_fonts(struct swapchain_data* data)
 {
    struct device_data *device_data = data->device;
    const auto& params = device_data->instance->params;
-   const bool font_changed = params.font_params_hash != device_data->font_params_hash;
 
-   if (font_changed)
+   if (params.font_params_hash != device_data->font_params_hash)
    {
       std::unique_lock<std::mutex> lk(device_data->font_mutex);
       SPDLOG_DEBUG("Recreating font image");
@@ -723,10 +730,18 @@ static void check_fonts(struct swapchain_data* data)
       data->sw_stats.font1 = device_data->font_alt;
       data->sw_stats.font_text = device_data->font_text;
       SPDLOG_DEBUG("Default font tex size: {}x{}px", width, height);
+   }
 
-      SPDLOG_DEBUG("Update font image descriptor {}", (void*)device_data->descriptor_set);
-      update_image_descriptor(data, device_data->font_img.image_view, device_data->descriptor_set);
-      device_data->font_atlas->SetTexID((ImTextureID)device_data->descriptor_set);
+   if (params.font_params_hash != data->font_params_hash)
+   {
+      if (!data->descriptor_set)
+         data->descriptor_set = alloc_descriptor_set(data);
+      SPDLOG_DEBUG("Update font image descriptor {}", (void*)data->descriptor_set);
+      data->font_params_hash = params.font_params_hash;
+      // Just in case, maybe font is being created by another swapchain (possible?) so wait
+      std::unique_lock<std::mutex> lk(device_data->font_mutex);
+      update_image_descriptor(data, device_data->font_img.image_view, data->descriptor_set);
+      device_data->font_atlas->SetTexID((ImTextureID)data->descriptor_set);
    }
 
    // Just swapchain was (re)created
@@ -1078,6 +1093,34 @@ static void setup_swapchain_data_pipeline(struct swapchain_data *data)
    VK_CHECK(device_data->vtable.CreateShaderModule(device_data->device,
                                                    &frag_info, NULL, &frag_module));
 
+   /* Descriptor pool */
+   VkDescriptorPoolSize sampler_pool_size = {};
+   sampler_pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+   sampler_pool_size.descriptorCount = 1;
+   VkDescriptorPoolCreateInfo desc_pool_info = {};
+   desc_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+   desc_pool_info.maxSets = 1;
+   desc_pool_info.poolSizeCount = 1;
+   desc_pool_info.pPoolSizes = &sampler_pool_size;
+   VK_CHECK(device_data->vtable.CreateDescriptorPool(device_data->device,
+                                                     &desc_pool_info,
+                                                     NULL, &data->descriptor_pool));
+
+   /* Descriptor layout */
+   VkSampler sampler[1] = { device_data->sampler };
+   VkDescriptorSetLayoutBinding binding[1] = {};
+   binding[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+   binding[0].descriptorCount = 1;
+   binding[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+   binding[0].pImmutableSamplers = sampler;
+   VkDescriptorSetLayoutCreateInfo set_layout_info = {};
+   set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+   set_layout_info.bindingCount = 1;
+   set_layout_info.pBindings = binding;
+   VK_CHECK(device_data->vtable.CreateDescriptorSetLayout(device_data->device,
+                                                          &set_layout_info,
+                                                          NULL, &data->descriptor_layout));
+
    /* Constants: we are using 'vec2 offset' and 'vec2 scale' instead of a full
     * 3d projection matrix
     */
@@ -1088,7 +1131,7 @@ static void setup_swapchain_data_pipeline(struct swapchain_data *data)
    VkPipelineLayoutCreateInfo layout_info = {};
    layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
    layout_info.setLayoutCount = 1;
-   layout_info.pSetLayouts = &device_data->descriptor_layout;
+   layout_info.pSetLayouts = &data->descriptor_layout;
    layout_info.pushConstantRangeCount = 1;
    layout_info.pPushConstantRanges = push_constants;
    VK_CHECK(device_data->vtable.CreatePipelineLayout(device_data->device,
@@ -1784,10 +1827,10 @@ static void overlay_DestroyDevice(
       device_unmap_queues(device_data);
    }
 
-   device_data->vtable.DestroyDescriptorPool(device_data->device,
-                                             device_data->descriptor_pool, NULL);
-   device_data->vtable.DestroyDescriptorSetLayout(device_data->device,
-                                                  device_data->descriptor_layout, NULL);
+//    device_data->vtable.DestroyDescriptorPool(device_data->device,
+//                                              device_data->descriptor_pool, NULL);
+//    device_data->vtable.DestroyDescriptorSetLayout(device_data->device,
+//                                                   device_data->descriptor_layout, NULL);
 
    device_data->vtable.DestroySampler(device_data->device, device_data->sampler, NULL);
 
