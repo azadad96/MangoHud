@@ -225,13 +225,15 @@ imgui_options = [
   'dx12=disabled',
   'metal=disabled',
   'opengl=disabled',
+  'sdl_renderer=disabled',
   'vulkan=disabled',
+  'webgpu=disabled',
   'glfw=disabled',
   'sdl2=disabled',
   'osx=disabled',
   'win=disabled',
-  'marmalade=disabled',
   'allegro5=disabled',
+  'werror=false', # ImGui_ImplGlfw_Data memset
 ]
 
 sizeof_ptr = cc.sizeof('void*')

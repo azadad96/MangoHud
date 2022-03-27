@@ -6,17 +6,19 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
+#include "imgui_impl_opengl3_loader.h"
 #include <stdio.h>
 #include <thread>
 #include <unistd.h>
 #include "../overlay.h"
 #include "mangoapp.h"
-#include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
 #define GLFW_EXPOSE_NATIVE_X11
 #include <GLFW/glfw3native.h>
 #include <X11/Xatom.h>
+
+#define GL_RENDERER                       0x1F01
 
 #include "nlohmann/json.hpp"
 using json = nlohmann::json;
@@ -197,8 +199,6 @@ GLFWwindow* init(const char* glsl_version){
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.IniFilename = NULL;
     ImGui::StyleColorsDark();
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init(glsl_version);
     return window;
 }
 
@@ -223,7 +223,7 @@ bool render(GLFWwindow* window) {
 }
 
 int main(int, char**)
-{   
+{
     // Setup window
     glfwSetErrorCallback(glfw_error_callback);
     if (!glfwInit())
@@ -238,15 +238,11 @@ int main(int, char**)
 
     // Create window with graphics context
     GLFWwindow* window = init(glsl_version);
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+
     // Initialize OpenGL loader
-
-    bool err = glewInit() != GLEW_OK;
-
-    if (err)
-    {
-        fprintf(stderr, "Failed to initialize OpenGL loader!\n");
+    if (!ImGui_ImplOpenGL3_Init(glsl_version))
         return 1;
-    }
 
     // Setup Platform/Renderer backends
     struct device_data *device_data = new struct device_data();
@@ -306,9 +302,9 @@ int main(int, char**)
             }
             // Rendering
             ImGui::Render();
-            glEnable(GL_DEPTH_TEST);        
-            glEnable(GL_BLEND);             
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glEnable(GL_DEPTH_TEST);
+            glEnable(GL_BLEND);
+            glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, 0);
             glClearColor(0, 0, 0, 0);
             glClear(GL_COLOR_BUFFER_BIT);
             ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
